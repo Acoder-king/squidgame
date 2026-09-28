@@ -55,7 +55,7 @@ export default function Hero({ booted }: { booted: boolean }) {
         {/* Default ambient hero video */}
         <video
           className={`hero-ambient-video h-full w-full object-cover transition-opacity duration-1000 ${
-            isPlaying ? 'opacity-0' : 'opacity-45'
+            isPlaying ? 'opacity-0' : 'opacity-35'
           }`}
           src="/media/hero-arena.mp4"
           poster="/media/arena-key.jpg"
@@ -114,15 +114,15 @@ export default function Hero({ booted }: { booted: boolean }) {
       >
         {/* 1. Department Badge */}
         <motion.div variants={item} className="flex flex-wrap items-center">
-          <span className="clip-tag font-grotesk inline-flex items-center gap-2 bg-neon/15 px-3 py-1.5 sm:px-4 sm:py-2 text-[10px] sm:text-[11px] font-semibold tracking-[0.2em] sm:tracking-[0.3em] text-neon uppercase ring-1 ring-neon/40 max-w-full">
-            <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-neon" aria-hidden="true" />
+          <span className="clip-tag font-grotesk inline-flex items-center gap-2.5 bg-neon/15 px-4 py-2 sm:px-5 sm:py-2.5 text-[12px] sm:text-[14px] font-bold tracking-[0.18em] sm:tracking-[0.25em] text-neon uppercase ring-1 ring-neon/50 max-w-full shadow-[0_0_20px_rgba(237,27,118,0.2)]">
+            <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-neon shadow-[0_0_8px_rgba(237,27,118,0.8)]" aria-hidden="true" />
             <span className="sm:hidden">Dept. of AI & ML presents</span>
             <span className="hidden sm:inline">{ORGANIZER} presents</span>
           </span>
         </motion.div>
 
         {/* 2. Symposium Text */}
-        <motion.p variants={item} className="font-grotesk mt-3 sm:mt-5 text-[11px] sm:text-sm tracking-[0.22em] sm:tracking-[0.45em] text-steel font-medium uppercase leading-relaxed">
+        <motion.p variants={item} className="font-grotesk mt-3 sm:mt-5 text-[13px] sm:text-base tracking-[0.22em] sm:tracking-[0.45em] text-ivory font-semibold uppercase leading-relaxed">
           NATIONAL LEVEL TECHNICAL SYMPOSIUM
         </motion.p>
 
@@ -143,13 +143,13 @@ export default function Hero({ booted }: { booted: boolean }) {
         </motion.p>
 
         {/* 6. Date / Location */}
-        <motion.div variants={item} className="font-grotesk mt-4 sm:mt-6 flex flex-wrap items-center gap-2.5 sm:gap-3 text-[11px] sm:text-[13px] tracking-[0.14em] sm:tracking-[0.18em] uppercase">
-          <span className="hud-border inline-flex items-center gap-2 rounded-sm bg-panel/80 px-3 py-1.5 text-steel shadow-sm backdrop-blur">
-            <CalendarDays size={14} className="text-neon shrink-0 sm:size-[15px]" />
+        <motion.div variants={item} className="font-grotesk mt-4 sm:mt-6 flex flex-wrap items-center gap-2.5 sm:gap-3 text-[13px] sm:text-[15px] tracking-[0.14em] sm:tracking-[0.18em] uppercase">
+          <span className="hud-border inline-flex items-center gap-2.5 rounded-sm bg-panel/80 px-4 py-2 sm:px-5 sm:py-2.5 text-ivory font-semibold shadow-md backdrop-blur border border-white/15">
+            <CalendarDays size={16} className="text-neon shrink-0 sm:size-[18px]" />
             <span>{EVENT_DATES_LABEL}</span>
           </span>
-          <span className="hud-border inline-flex items-center gap-2 rounded-sm bg-panel/80 px-3 py-1.5 text-steel shadow-sm backdrop-blur">
-            <MapPin size={14} className="text-neon shrink-0 sm:size-[15px]" />
+          <span className="hud-border inline-flex items-center gap-2.5 rounded-sm bg-panel/80 px-4 py-2 sm:px-5 sm:py-2.5 text-ivory font-semibold shadow-md backdrop-blur border border-white/15">
+            <MapPin size={16} className="text-neon shrink-0 sm:size-[18px]" />
             <span className="hidden sm:inline">{VENUE_SHORT}</span>
             <span className="sm:hidden">CAHCET · Vellore</span>
           </span>

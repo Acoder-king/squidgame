@@ -376,7 +376,7 @@ input[type="checkbox"] {
 
 /* ── Hero light mode background opacity controls ── */
 [data-theme="squidgame"] .hero-ambient-video {
-  opacity: 0.08 !important;
+  opacity: 0.20 !important;
   filter: contrast(1.1) brightness(0.95);
 }
 
