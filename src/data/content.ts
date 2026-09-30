@@ -66,6 +66,7 @@ export function buildRegistrationWhatsAppUrl(
     team_name?: string;
     team_size?: string;
     teammates?: { name: string }[];
+    transaction_id?: string;
   }
 ): { url: string; phone: string; displayPhone: string; eventName: string } | null {
   const handler = EVENT_WHATSAPP_HANDLERS[eventSlug];
@@ -106,8 +107,14 @@ export function buildRegistrationWhatsAppUrl(
     lines.push(`🤝 *Teammates:*\n${list}`);
   }
 
+  if (registration.transaction_id) {
+    lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    lines.push(`💳 *UPI Reference / UTR:* \`${registration.transaction_id}\``);
+    lines.push(`📑 *Payment Receipt:* Attached (Pending Coordinator Verification)`);
+  }
+
   lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-  lines.push(`✅ *Status:* Registered in System`);
+  lines.push(`✅ *Status:* Registered (${registration.transaction_id ? 'Payment Pending Verification' : 'Confirmed'})`);
   lines.push(`_Dept. of Artificial Intelligence & Machine Learning_`);
   lines.push(`_C. Abdul Hakeem College of Engineering & Technology_`);
 

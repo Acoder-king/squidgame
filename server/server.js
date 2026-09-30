@@ -11,6 +11,7 @@ import {
   getGalleryService,
   getScheduleService,
   getRegistrationsService,
+  checkTransactionIdService,
 } from './services.js';
 import { isTiDBConfigured } from './tidb-client.js';
 
@@ -60,6 +61,18 @@ app.post('/api/register', async (req, res) => {
   } catch (err) {
     console.error('API /register error:', err.message);
     res.status(400).json({ error: err.message || 'Registration failed' });
+  }
+});
+
+// 2b. UPI Transaction Validation & Duplicate Check API
+app.all('/api/check-transaction', async (req, res) => {
+  try {
+    const txnId = req.method === 'POST' ? req.body?.transactionId : req.query?.id;
+    const result = await checkTransactionIdService(txnId);
+    return res.status(result.valid ? 200 : 400).json(result);
+  } catch (err) {
+    console.error('API /check-transaction error:', err.message);
+    res.status(500).json({ valid: false, error: err.message || 'Validation error' });
   }
 });
 

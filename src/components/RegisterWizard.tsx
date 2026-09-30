@@ -6,7 +6,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Loader2, CheckCircle2, AlertCircle, Plus, Trash2,
   Swords, User, GraduationCap, PhoneCall, Users, ClipboardCheck, PartyPopper,
-  MessageCircle, Send, Copy, ShieldCheck, CheckCheck, Printer, Check,
+  MessageCircle, Send, Copy, ShieldCheck, CheckCheck, Printer, Check, QrCode, IndianRupee,
+  Upload, FileCheck, X, Eye, ShieldAlert, CheckCircle, RefreshCw,
 } from 'lucide-react';
 import { apiGet, apiPost, type ArenaEvent } from '../lib/api';
 import { buildRegistrationWhatsAppUrl } from '../data/content';
@@ -44,8 +45,9 @@ const STEPS = [
   { id: 2, label: 'College', icon: GraduationCap },
   { id: 3, label: 'Contact', icon: PhoneCall },
   { id: 4, label: 'Squad', icon: Users },
-  { id: 5, label: 'Review', icon: ClipboardCheck },
-  { id: 6, label: 'Confirmed', icon: PartyPopper },
+  { id: 5, label: 'Payment', icon: QrCode },
+  { id: 6, label: 'Review', icon: ClipboardCheck },
+  { id: 7, label: 'Confirmed', icon: PartyPopper },
 ];
 
 const STEP_FIELDS: (keyof FormValues)[][] = [
@@ -54,9 +56,58 @@ const STEP_FIELDS: (keyof FormValues)[][] = [
   ['college', 'department', 'year_of_study'],
   ['alternate_phone'],
   [],
+  [],
   ['agree_rules'],
   [],
 ];
+
+/* ── UPI Payment QR codes mapped to specific events ── */
+const EVENT_PAYMENT_QR: Record<string, {
+  coordinatorName: string;
+  upiId: string;
+  qrImage: string;
+}> = {
+  'paper-presentation': {
+    coordinatorName: 'Vijay',
+    upiId: 'm.s.vijayakumar360@okicici',
+    qrImage: '/qr-codes/paper-presentation.jpg',
+  },
+  'prompt-clash': {
+    coordinatorName: 'Harish Priyan',
+    upiId: 'harishpriyan767-1@okhdfcbank',
+    qrImage: '/qr-codes/prompt-clash.jpg',
+  },
+  'free-fire': {
+    coordinatorName: 'Shanmugam P',
+    upiId: 'shanmugamp598@oksbi',
+    qrImage: '/qr-codes/free-fire.jpg',
+  },
+  'quest-of-mind': {
+    coordinatorName: 'Arif',
+    upiId: 'ah8499418@oksbi',
+    qrImage: '/qr-codes/quest-of-mind.jpg',
+  },
+  'squid-game': {
+    coordinatorName: 'Mohammed Amaan. D',
+    upiId: 'amaanmohammed757@okhdfcbank',
+    qrImage: '/qr-codes/squid-game.jpg',
+  },
+  'technical-quiz': {
+    coordinatorName: 'Hasni Mubarak G',
+    upiId: '919489619915@wahdfcbank',
+    qrImage: '/qr-codes/technical-quiz.jpg',
+  },
+  'ai-web-design': {
+    coordinatorName: 'Muhammad Ameen',
+    upiId: 'jmuhammadameen19@okhdfcbank',
+    qrImage: '/qr-codes/ai-web-design.jpg',
+  },
+  'filmography-photography': {
+    coordinatorName: 'Rakshan',
+    upiId: '8678903307@fam',
+    qrImage: '/qr-codes/filmography-photography.jpg',
+  },
+};
 
 const inputCls =
   'w-full border border-white/10 bg-void/70 px-4 py-3.5 text-[14px] text-ivory placeholder:text-faint transition-colors focus:border-neon/60 focus:outline-none';
@@ -79,6 +130,118 @@ export default function RegisterWizard() {
   const [submitError, setSubmitError] = useState('');
   const [success, setSuccess] = useState<SuccessData | null>(null);
   const [copied, setCopied] = useState(false);
+
+  /* ── Payment confirmation and verification state ── */
+  const [paymentConfirmed, setPaymentConfirmed] = useState<Record<string, boolean>>({});
+  const [transactionIds, setTransactionIds] = useState<Record<string, string>>({});
+  const [paymentProofs, setPaymentProofs] = useState<Record<string, { dataUrl: string; name: string; size: number }>>({});
+  const [txnErrors, setTxnErrors] = useState<Record<string, string>>({});
+  const [txnChecking, setTxnChecking] = useState<Record<string, boolean>>({});
+  const [txnSuccess, setTxnSuccess] = useState<Record<string, boolean>>({});
+  const [paymentError, setPaymentError] = useState('');
+  const [verifyingPayments, setVerifyingPayments] = useState(false);
+  const [selectedProofModal, setSelectedProofModal] = useState<{ src: string; title: string } | null>(null);
+
+  const validateUpiInput = (id: string, currentSlug: string, allTxnIds: Record<string, string>, payableSlugs: string[]) => {
+    const clean = id.trim();
+    if (!clean) {
+      return { valid: false, message: '12-digit UPI UTR is required.' };
+    }
+    if (!/^\d{12}$/.test(clean)) {
+      return {
+        valid: false,
+        message: `Must be exactly 12 numeric digits (${clean.length}/12 entered). Check UPI receipt.`,
+      };
+    }
+    if (/^(\d)\1{11}$/.test(clean)) {
+      return { valid: false, message: 'Invalid reference ID: repeating digits are not permitted.' };
+    }
+    const dummySequences = [
+      '123456789012', '012345678901', '234567890123', '345678901234',
+      '987654321098', '876543210987', '000000000000', '111111111111',
+      '121212121212', '123123123123',
+    ];
+    if (dummySequences.includes(clean)) {
+      return { valid: false, message: 'Dummy reference ID detected! Enter the genuine 12-digit UPI UTR.' };
+    }
+    // Check if duplicate with other events in the same registration
+    for (const otherSlug of payableSlugs) {
+      if (otherSlug !== currentSlug && (allTxnIds[otherSlug] || '').trim() === clean) {
+        return { valid: false, message: 'Duplicate ID! You cannot use the same transaction ID for multiple events.' };
+      }
+    }
+    return { valid: true, message: '✓ Valid 12-digit UPI UTR' };
+  };
+
+  const handleTxnChange = async (slug: string, val: string) => {
+    const digitsOnly = val.replace(/\D/g, '').slice(0, 12);
+    const updated = { ...transactionIds, [slug]: digitsOnly };
+    setTransactionIds(updated);
+    setPaymentError('');
+
+    const payableSlugs = picked.filter((s) => s in EVENT_PAYMENT_QR);
+
+    if (digitsOnly.length === 12) {
+      const check = validateUpiInput(digitsOnly, slug, updated, payableSlugs);
+      if (!check.valid) {
+        setTxnErrors((prev) => ({ ...prev, [slug]: check.message }));
+        setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
+      } else {
+        setTxnErrors((prev) => ({ ...prev, [slug]: '' }));
+        // Call server check
+        setTxnChecking((prev) => ({ ...prev, [slug]: true }));
+        try {
+          const res = await apiPost<{ valid: boolean; message?: string }>('/api/check-transaction', {
+            transactionId: digitsOnly,
+          });
+          if (res && res.valid) {
+            setTxnErrors((prev) => ({ ...prev, [slug]: '' }));
+            setTxnSuccess((prev) => ({ ...prev, [slug]: true }));
+          } else {
+            setTxnErrors((prev) => ({ ...prev, [slug]: res?.message || 'Invalid or duplicate reference ID.' }));
+            setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
+          }
+        } catch (err: any) {
+          setTxnErrors((prev) => ({ ...prev, [slug]: err.message || 'Duplicate check failed.' }));
+          setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
+        } finally {
+          setTxnChecking((prev) => ({ ...prev, [slug]: false }));
+        }
+      }
+    } else {
+      setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
+      if (digitsOnly.length > 0) {
+        setTxnErrors((prev) => ({
+          ...prev,
+          [slug]: `Must be 12 numeric digits (${digitsOnly.length}/12 entered).`,
+        }));
+      } else {
+        setTxnErrors((prev) => ({ ...prev, [slug]: '' }));
+      }
+    }
+  };
+
+  const handleProofUpload = (slug: string, file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setPaymentError('Only image files (JPG, PNG, WebP) are allowed for payment proof.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setPaymentError('Image size must be less than 5 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      setPaymentProofs((prev) => ({
+        ...prev,
+        [slug]: { dataUrl, name: file.name, size: file.size },
+      }));
+      setPaymentError('');
+    };
+    reader.readAsDataURL(file);
+  };
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema) as Resolver<FormValues>,
@@ -125,8 +288,81 @@ export default function RegisterWizard() {
   const next = async () => {
     const toCheck = STEP_FIELDS[step];
     const ok = toCheck.length ? await trigger(toCheck) : true;
+
+    /* ── Payment step validation ── */
+    if (step === 5) {
+      const payableSlugs = picked.filter((s) => s in EVENT_PAYMENT_QR);
+      if (payableSlugs.length > 0) {
+        // 1. Check all confirmed
+        const unconfirmed = payableSlugs.filter((s) => !paymentConfirmed[s]);
+        if (unconfirmed.length > 0) {
+          setPaymentError(`Please confirm payment for: ${unconfirmed.map(s => events.find(e => e.slug === s)?.name || s).join(', ')}`);
+          return;
+        }
+
+        // 2. Check 12-digit transaction IDs
+        for (const slug of payableSlugs) {
+          const txn = (transactionIds[slug] || '').trim();
+          const eventName = events.find(e => e.slug === slug)?.name || slug;
+          if (!txn) {
+            setPaymentError(`Please enter the 12-digit UPI Transaction ID for ${eventName}`);
+            return;
+          }
+          const check = validateUpiInput(txn, slug, transactionIds, payableSlugs);
+          if (!check.valid) {
+            setPaymentError(`${eventName}: ${check.message}`);
+            return;
+          }
+        }
+
+        // 3. Check for form-level duplicates
+        const seenTxns = new Set<string>();
+        for (const slug of payableSlugs) {
+          const txn = (transactionIds[slug] || '').trim();
+          const eventName = events.find(e => e.slug === slug)?.name || slug;
+          if (seenTxns.has(txn)) {
+            setPaymentError(`Duplicate Transaction ID: "${txn}" is used for multiple events. Each event must be paid separately.`);
+            return;
+          }
+          seenTxns.add(txn);
+        }
+
+        // 4. Check for screenshot proofs
+        const missingProofs = payableSlugs.filter((s) => !paymentProofs[s]);
+        if (missingProofs.length > 0) {
+          setPaymentError(`Please upload the payment receipt screenshot for: ${missingProofs.map(s => events.find(e => e.slug === s)?.name || s).join(', ')}`);
+          return;
+        }
+
+        // 5. Server check for database duplicate
+        setVerifyingPayments(true);
+        try {
+          for (const slug of payableSlugs) {
+            const txn = (transactionIds[slug] || '').trim();
+            const eventName = events.find(e => e.slug === slug)?.name || slug;
+            const res = await apiPost<{ valid: boolean; message?: string }>('/api/check-transaction', {
+              transactionId: txn,
+            });
+            if (!res.valid) {
+              setPaymentError(`${eventName}: ${res.message || 'Duplicate Transaction ID detected in system.'}`);
+              setVerifyingPayments(false);
+              return;
+            }
+          }
+        } catch (err: any) {
+          setPaymentError(err.message || 'Transaction validation failed. Duplicate IDs are rejected.');
+          setVerifyingPayments(false);
+          return;
+        } finally {
+          setVerifyingPayments(false);
+        }
+
+        setPaymentError('');
+      }
+    }
+
     if (ok) {
-      setStep((s) => Math.min(6, s + 1));
+      setStep((s) => Math.min(7, s + 1));
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
@@ -142,13 +378,29 @@ export default function RegisterWizard() {
     setSubmitError('');
     try {
       const values = getValues();
+      const payableSlugs = picked.filter((s) => s in EVENT_PAYMENT_QR);
+      const paymentDetails = payableSlugs.map((slug) => ({
+        event_slug: slug,
+        event_name: events.find((e) => e.slug === slug)?.name || slug,
+        coordinator: EVENT_PAYMENT_QR[slug]?.coordinatorName || '',
+        upi_id: EVENT_PAYMENT_QR[slug]?.upiId || '',
+        transaction_id: transactionIds[slug] || '',
+        proof_name: paymentProofs[slug]?.name || '',
+        proof_data: paymentProofs[slug]?.dataUrl || '',
+      }));
+
       const data = await apiPost<{
         ok: boolean;
         player_tag: string;
         full_name: string;
         event_slugs: string[];
+        payment_details?: any[];
         coordinators?: { event: string; phone: string; displayPhone: string }[];
-      }>('/api/register', values);
+      }>('/api/register', {
+        ...values,
+        payment_details: paymentDetails,
+      });
+
       setSuccess({
         player_tag: data.player_tag,
         full_name: data.full_name,
@@ -156,13 +408,15 @@ export default function RegisterWizard() {
         formData: values,
         coordinators: data.coordinators,
       });
-      setStep(6);
+      setStep(7);
       window.scrollTo({ top: 0, behavior: 'smooth' });
 
       // Trigger instant WhatsApp dispatch for the first selected event
       if (data.event_slugs && data.event_slugs.length > 0) {
-        const firstDispatch = buildRegistrationWhatsAppUrl(data.event_slugs[0], {
+        const firstSlug = data.event_slugs[0];
+        const firstDispatch = buildRegistrationWhatsAppUrl(firstSlug, {
           player_tag: data.player_tag,
+          transaction_id: transactionIds[firstSlug],
           ...values,
         });
         if (firstDispatch?.url) {
@@ -179,19 +433,19 @@ export default function RegisterWizard() {
   };
 
   const pickedNames = events.filter((e) => picked.includes(e.slug)).map((e) => e.name);
-  const progress = Math.round(((step + 1) / 7) * 100);
+  const progress = Math.round(((step + 1) / 8) * 100);
 
   return (
     <div>
       <div className="mb-8" aria-label="Registration progress">
         <div className="flex items-center justify-between">
-          <p className="font-grotesk text-[11px] tracking-[0.3em] text-faint">STEP {Math.min(step + 1, 7)} / 07</p>
+          <p className="font-grotesk text-[11px] tracking-[0.3em] text-faint">STEP {Math.min(step + 1, 8)} / 08</p>
           <p className="font-grotesk text-[11px] tracking-[0.3em] text-neon">{progress}%</p>
         </div>
         <div className="mt-2 h-1 overflow-hidden bg-white/10" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
           <motion.div className="h-full bg-neon" animate={{ width: `${progress}%` }} transition={{ duration: 0.4 }} style={{ boxShadow: `0 0 12px rgba(var(--theme-glow-rgb),0.8)` }} />
         </div>
-        <ol className="mt-4 hidden grid-cols-7 gap-1 md:grid">
+        <ol className="mt-4 hidden grid-cols-8 gap-1 md:grid">
           {STEPS.map((s) => (
             <li key={s.id} className={`font-grotesk flex items-center gap-1.5 text-[10px] tracking-[0.14em] uppercase ${s.id <= step ? 'text-ivory' : 'text-faint'}`} aria-current={s.id === step ? 'step' : undefined}>
               <s.icon size={13} className={s.id <= step ? 'text-neon' : ''} /> {s.label}
@@ -372,10 +626,277 @@ export default function RegisterWizard() {
             </fieldset>
           )}
 
-          {step === 5 && (
+          {/* ── STEP 5: UPI Payment QR Codes ── */}
+          {step === 5 && (() => {
+            const payableSlugs = picked.filter((s) => s in EVENT_PAYMENT_QR);
+            const hasPayable = payableSlugs.length > 0;
+            return (
+              <div>
+                <h2 className="font-display text-xl font-bold text-ivory sm:text-2xl">Payment via UPI</h2>
+                <p className="mt-1 text-sm text-dim">
+                  {hasPayable
+                    ? 'Scan the QR code(s) below to pay the registration fee for your selected events. Pay the coordinator directly.'
+                    : 'No UPI payment is required for your selected events. You may proceed to the next step.'}
+                </p>
+
+                {hasPayable && (
+                  <div className="mt-6 grid gap-5 sm:grid-cols-2">
+                    {payableSlugs.map((slug) => {
+                      const qr = EVENT_PAYMENT_QR[slug];
+                      const ev = events.find((e) => e.slug === slug);
+                      return (
+                        <motion.div
+                          key={slug}
+                          initial={{ opacity: 0, y: 16 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.35 }}
+                          className="hud-border group relative overflow-hidden bg-panel/70 p-5 transition-all hover:border-neon/50 hover:shadow-[0_0_28px_rgba(237,27,118,0.18)]"
+                        >
+                          {/* Event Name Badge */}
+                          <div className="mb-3 flex items-center justify-between">
+                            <span className="font-grotesk text-[10px] font-bold tracking-[0.28em] text-neon uppercase">
+                              {ev?.name || slug}
+                            </span>
+                            <span className="font-grotesk inline-flex items-center gap-1 rounded-sm border border-neon/30 bg-neon/10 px-2 py-0.5 text-[10px] font-bold tracking-wider text-neon uppercase">
+                              <IndianRupee size={10} /> {ev?.fee || 'See fee'}
+                            </span>
+                          </div>
+
+                          {/* QR Code Image */}
+                          <div className="relative mx-auto aspect-[3/4] max-w-[280px] overflow-hidden rounded-lg border border-white/10 bg-white">
+                            <img
+                              src={qr.qrImage}
+                              alt={`UPI QR Code for ${qr.coordinatorName}`}
+                              className="h-full w-full object-contain"
+                              loading="lazy"
+                            />
+                          </div>
+
+                          {/* Coordinator Info */}
+                          <div className="mt-3 text-center">
+                            <p className="font-grotesk text-[11px] tracking-[0.2em] text-faint uppercase">Pay to Coordinator</p>
+                            <p className="font-display mt-0.5 text-[15px] font-bold text-ivory">{qr.coordinatorName}</p>
+                            <p className="font-grotesk mt-1 text-[11px] text-steel break-all">UPI: {qr.upiId}</p>
+                          </div>
+
+                          {/* Scan Instruction */}
+                          <div className="mt-3 flex items-center justify-center gap-1.5 rounded-sm border border-white/10 bg-void/50 py-2 text-center">
+                            <QrCode size={13} className="text-neon" />
+                            <span className="font-grotesk text-[10px] font-semibold tracking-[0.18em] text-dim uppercase">Scan to pay with any UPI app</span>
+                          </div>
+
+                          {/* Payment Confirmation */}
+                          <div className={`mt-4 border-t pt-4 ${
+                            paymentConfirmed[slug]
+                              ? 'border-emerald-500/30'
+                              : 'border-white/10'
+                          }`}>
+                            <label className="flex cursor-pointer items-start gap-3 text-[13px] text-dim">
+                              <input
+                                type="checkbox"
+                                checked={!!paymentConfirmed[slug]}
+                                onChange={(e) => {
+                                  setPaymentConfirmed((prev) => ({ ...prev, [slug]: e.target.checked }));
+                                  setPaymentError('');
+                                }}
+                                className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-500"
+                              />
+                              <span className={paymentConfirmed[slug] ? 'text-emerald-400 font-semibold' : 'text-dim'}>
+                                {paymentConfirmed[slug] ? '✓ Payment completed for this arena' : 'I have completed payment for this arena'}
+                              </span>
+                            </label>
+
+                            {paymentConfirmed[slug] && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                transition={{ duration: 0.25 }}
+                                className="mt-4 space-y-4 border-t border-white/5 pt-4"
+                              >
+                                {/* 1. UPI Transaction ID Input */}
+                                <div>
+                                  <div className="flex items-center justify-between">
+                                    <label className={labelCls}>UPI Reference / UTR ID (12 Digits) *</label>
+                                    <span className={`font-mono text-[10.5px] font-bold ${
+                                      (transactionIds[slug]?.length || 0) === 12
+                                        ? (txnErrors[slug] ? 'text-neon' : 'text-emerald-400')
+                                        : 'text-faint'
+                                    }`}>
+                                      {transactionIds[slug]?.length || 0} / 12 digits
+                                    </span>
+                                  </div>
+                                  <div className="relative mt-1">
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      maxLength={12}
+                                      value={transactionIds[slug] || ''}
+                                      onChange={(e) => handleTxnChange(slug, e.target.value)}
+                                      placeholder="e.g. 427012345678"
+                                      className={`${inputCls} font-mono tracking-wider ${
+                                        txnErrors[slug]
+                                          ? 'border-neon/80 bg-neon/5'
+                                          : txnSuccess[slug]
+                                            ? 'border-emerald-500/80 bg-emerald-950/20'
+                                            : ''
+                                      }`}
+                                    />
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                                      {txnChecking[slug] && (
+                                        <span className="flex items-center gap-1 text-[11px] text-faint">
+                                          <Loader2 size={13} className="animate-spin text-neon" /> Checking...
+                                        </span>
+                                      )}
+                                      {txnSuccess[slug] && !txnChecking[slug] && (
+                                        <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-semibold">
+                                          <CheckCircle size={15} />
+                                        </span>
+                                      )}
+                                      {txnErrors[slug] && !txnChecking[slug] && (
+                                        <span className="flex items-center gap-1 text-[11px] text-neon">
+                                          <AlertCircle size={15} />
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Error or Success feedback */}
+                                  {txnErrors[slug] ? (
+                                    <p className="mt-1.5 flex items-center gap-1 text-[11px] text-neon font-medium" role="alert">
+                                      <AlertCircle size={13} className="shrink-0" /> {txnErrors[slug]}
+                                    </p>
+                                  ) : txnSuccess[slug] ? (
+                                    <p className="mt-1.5 flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+                                      <CheckCircle size={13} className="shrink-0" /> Valid 12-digit UTR · Verified unique in registry
+                                    </p>
+                                  ) : (
+                                    <p className="font-grotesk mt-1.5 text-[10.5px] text-faint">
+                                      Enter the 12-digit numeric UPI Reference / UTR Number found in your payment app receipt (e.g. Google Pay, PhonePe, Paytm).
+                                    </p>
+                                  )}
+                                </div>
+
+                                {/* 2. Payment Screenshot Upload */}
+                                <div>
+                                  <label className={labelCls}>Upload Payment Screenshot / Receipt *</label>
+                                  {paymentProofs[slug] ? (
+                                    <div className="hud-border relative flex items-center justify-between gap-3 border-emerald-500/40 bg-emerald-950/20 p-3">
+                                      <div className="flex items-center gap-3 overflow-hidden">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedProofModal({
+                                            src: paymentProofs[slug].dataUrl,
+                                            title: `${ev?.name || slug} — Payment Proof`,
+                                          })}
+                                          className="group/img relative h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded border border-emerald-500/50 bg-black"
+                                          title="Click to preview full screenshot"
+                                        >
+                                          <img
+                                            src={paymentProofs[slug].dataUrl}
+                                            alt="Receipt Preview"
+                                            className="h-full w-full object-cover transition-transform group-hover/img:scale-110"
+                                          />
+                                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/img:opacity-100">
+                                            <Eye size={14} className="text-white" />
+                                          </div>
+                                        </button>
+                                        <div className="overflow-hidden">
+                                          <p className="truncate text-[12px] font-semibold text-emerald-400 flex items-center gap-1">
+                                            <FileCheck size={13} className="shrink-0" /> {paymentProofs[slug].name}
+                                          </p>
+                                          <p className="font-mono text-[10.5px] text-faint">
+                                            {(paymentProofs[slug].size / 1024).toFixed(1)} KB · Screenshot Attached
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedProofModal({
+                                            src: paymentProofs[slug].dataUrl,
+                                            title: `${ev?.name || slug} — Payment Proof`,
+                                          })}
+                                          className="cursor-pointer text-[11px] text-dim hover:text-ivory flex items-center gap-1"
+                                        >
+                                          <Eye size={13} /> View
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setPaymentProofs((prev) => {
+                                              const copy = { ...prev };
+                                              delete copy[slug];
+                                              return copy;
+                                            });
+                                          }}
+                                          className="cursor-pointer text-[11px] text-neon hover:underline flex items-center gap-1 ml-1"
+                                        >
+                                          <Trash2 size={13} /> Remove
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <label className="hud-border group flex cursor-pointer flex-col items-center justify-center border-dashed border-white/20 bg-void/60 p-4 transition-colors hover:border-neon/60 hover:bg-neon/5">
+                                      <input
+                                        type="file"
+                                        accept="image/png, image/jpeg, image/jpg, image/webp"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) handleProofUpload(slug, file);
+                                        }}
+                                      />
+                                      <Upload size={20} className="text-neon transition-transform group-hover:scale-110" />
+                                      <p className="font-grotesk mt-2 text-[11px] font-bold tracking-wider text-ivory uppercase">
+                                        Attach Payment Screenshot
+                                      </p>
+                                      <p className="font-grotesk mt-0.5 text-[10px] text-faint text-center">
+                                        PNG, JPG, WebP up to 5MB · Receipt showing 12-digit UTR & amount
+                                      </p>
+                                    </label>
+                                  )}
+                                </div>
+                              </motion.div>
+                            )}
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {hasPayable && (
+                  <div className="hud-border glass mt-6 border-amber-500/30 bg-amber-500/10 p-4">
+                    <div className="flex items-start gap-3">
+                      <ShieldAlert size={20} className="shrink-0 text-amber-400 mt-0.5" />
+                      <div>
+                        <p className="font-grotesk text-[11px] font-bold tracking-widest text-amber-300 uppercase">
+                          🔒 ANTI-FRAUD VERIFICATION ACTIVE
+                        </p>
+                        <p className="font-grotesk mt-1 text-[11.5px] leading-relaxed text-steel">
+                          Every payable arena requires a <strong>genuine 12-digit UPI Reference / UTR number</strong> and an <strong>uploaded payment screenshot receipt</strong>. Duplicate reference numbers and dummy test IDs are rejected by the system. Student coordinators will verify all UTRs against their bank and UPI apps.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {paymentError && (
+                  <p className="mt-4 flex items-center gap-2 text-[13px] text-neon" role="alert">
+                    <AlertCircle size={16} className="shrink-0" /> {paymentError}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── STEP 6: Review & Confirm ── */}
+          {step === 6 && (
             <div>
               <h2 className="font-display text-xl font-bold text-ivory sm:text-2xl">Review and confirm</h2>
-              <p className="mt-1 text-sm text-dim">Verify your dossier before entering the registry.</p>
+              <p className="mt-1 text-sm text-dim">Verify your dossier and payment receipts before entering the registry.</p>
+              
               <dl className="hud-border mt-6 divide-y divide-white/10 bg-panel/60 text-[13.5px]">
                 {[
                   ['Arenas', pickedNames.join(', ') || '—'],
@@ -389,8 +910,59 @@ export default function RegisterWizard() {
                   </div>
                 ))}
               </dl>
+
+              {/* Payment Summary in Review step */}
+              {picked.some((s) => s in EVENT_PAYMENT_QR) && (
+                <div className="mt-6">
+                  <p className="font-grotesk text-[11px] font-bold tracking-[0.25em] text-neon uppercase">
+                    💳 Verified UPI Payments & Receipts
+                  </p>
+                  <div className="mt-2 divide-y divide-white/10 rounded-sm border border-white/10 bg-panel/60">
+                    {picked
+                      .filter((s) => s in EVENT_PAYMENT_QR)
+                      .map((slug) => {
+                        const qr = EVENT_PAYMENT_QR[slug];
+                        const ev = events.find((e) => e.slug === slug);
+                        const txn = transactionIds[slug];
+                        const proof = paymentProofs[slug];
+                        return (
+                          <div key={slug} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-[13.5px] font-bold text-ivory">{ev?.name || slug}</p>
+                              <p className="font-grotesk text-[11px] text-dim">
+                                Paid to: <span className="text-steel">{qr.coordinatorName}</span> ({qr.upiId}) · <span className="text-neon">{ev?.fee}</span>
+                              </p>
+                              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                                <span className="font-mono text-[11px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 px-2.5 py-0.5 rounded">
+                                  UTR: {txn}
+                                </span>
+                                <span className="font-grotesk text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded uppercase">
+                                  Coordinator Verification Pending
+                                </span>
+                              </div>
+                            </div>
+                            {proof && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedProofModal({ src: proof.dataUrl, title: `${ev?.name || slug} — Payment Receipt` })}
+                                className="flex items-center gap-2 rounded border border-white/15 bg-black/40 p-2 cursor-pointer hover:border-emerald-500/50"
+                                title="Click to view full screenshot"
+                              >
+                                <img src={proof.dataUrl} alt="Receipt thumbnail" className="h-10 w-10 object-cover rounded" />
+                                <span className="text-[11px] text-dim hover:text-ivory flex items-center gap-1">
+                                  <Eye size={12} /> View Proof
+                                </span>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
               <label className="mt-5 flex cursor-pointer items-start gap-3 text-[13.5px] text-dim">
-                <input type="checkbox" className="mt-1 h-4 w-4 shrink-0" {...register('agree_rules')} />
+                <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-neon" {...register('agree_rules')} />
                 <span>I accept the arena protocol and confirm that all details provided are accurate. I understand the official rulebook will be published by the organizers.</span>
               </label>
               {errors.agree_rules && <p className={errCls} role="alert">{errors.agree_rules.message}</p>}
@@ -402,7 +974,7 @@ export default function RegisterWizard() {
             </div>
           )}
 
-          {step === 6 && success && (
+          {step === 7 && success && (
             <div className="py-6 text-center" role="status">
               <div>
                 <motion.div
@@ -541,6 +1113,7 @@ export default function RegisterWizard() {
                     {success.event_slugs.map((slug) => {
                       const dispatch = buildRegistrationWhatsAppUrl(slug, {
                         player_tag: success.player_tag,
+                        transaction_id: transactionIds[slug],
                         ...success.formData,
                       });
                       if (!dispatch) return null;
@@ -560,6 +1133,11 @@ export default function RegisterWizard() {
                             <p className="font-grotesk mt-0.5 text-[12px] font-semibold text-ivory">
                               📱 +91 {dispatch.displayPhone}
                             </p>
+                            {transactionIds[slug] && (
+                              <p className="font-mono text-[10.5px] text-emerald-400 mt-0.5">
+                                UTR: {transactionIds[slug]}
+                              </p>
+                            )}
                           </div>
                           <span className="font-grotesk inline-flex shrink-0 items-center gap-1.5 bg-[#25D366] px-3.5 py-1.5 text-[11px] font-bold tracking-wider text-black uppercase transition-transform group-hover:scale-105">
                             <Send size={12} /> Send on WhatsApp
@@ -577,7 +1155,11 @@ export default function RegisterWizard() {
                       type="button"
                       onClick={() => {
                         const text = success.event_slugs.map((slug) => {
-                          const d = buildRegistrationWhatsAppUrl(slug, { player_tag: success.player_tag, ...success.formData });
+                          const d = buildRegistrationWhatsAppUrl(slug, {
+                            player_tag: success.player_tag,
+                            transaction_id: transactionIds[slug],
+                            ...success.formData,
+                          });
                           return d ? decodeURIComponent(d.url.split('text=')[1] || '') : '';
                         }).filter(Boolean).join('\n\n');
                         navigator.clipboard.writeText(text);
@@ -596,23 +1178,32 @@ export default function RegisterWizard() {
         </motion.div>
       </AnimatePresence>
 
-      {step < 6 && (
+      {step < 7 && (
         <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
           <button
             type="button"
             onClick={back}
-            disabled={step === 0}
+            disabled={step === 0 || verifyingPayments}
             className="font-grotesk inline-flex cursor-pointer items-center justify-center gap-2 border border-white/15 px-7 py-3.5 text-[12px] font-bold tracking-[0.2em] text-dim uppercase transition-colors hover:text-ivory disabled:cursor-not-allowed disabled:opacity-30"
           >
             <ChevronLeft size={16} /> Back
           </button>
-          {step < 5 ? (
+          {step < 6 ? (
             <button
               type="button"
               onClick={next}
-              className="clip-btn font-grotesk inline-flex cursor-pointer items-center justify-center gap-2 bg-neon px-8 py-3.5 text-[12px] font-bold tracking-[0.2em] text-white uppercase hover:bg-crimson"
+              disabled={verifyingPayments}
+              className="clip-btn font-grotesk inline-flex cursor-pointer items-center justify-center gap-2 bg-neon px-8 py-3.5 text-[12px] font-bold tracking-[0.2em] text-white uppercase hover:bg-crimson disabled:opacity-50"
             >
-              Continue <ChevronRight size={16} />
+              {verifyingPayments ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" /> Verifying UTR...
+                </>
+              ) : (
+                <>
+                  Continue <ChevronRight size={16} />
+                </>
+              )}
             </button>
           ) : (
             <button
@@ -625,6 +1216,43 @@ export default function RegisterWizard() {
               {submitting ? 'Registering…' : 'Confirm registration'}
             </button>
           )}
+        </div>
+      )}
+
+      {/* Screenshot Preview Modal */}
+      {selectedProofModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-md">
+          <div className="hud-border relative max-h-[92vh] max-w-lg w-full bg-void p-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <p className="font-grotesk text-[12px] font-bold text-ivory uppercase tracking-wider">
+                {selectedProofModal.title}
+              </p>
+              <button
+                type="button"
+                onClick={() => setSelectedProofModal(null)}
+                className="cursor-pointer text-dim hover:text-white p-1"
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mt-4 max-h-[70vh] overflow-auto flex items-center justify-center bg-black/60 rounded p-2">
+              <img
+                src={selectedProofModal.src}
+                alt="Payment Receipt Large"
+                className="max-h-[66vh] w-auto object-contain rounded"
+              />
+            </div>
+            <div className="mt-4 text-center">
+              <button
+                type="button"
+                onClick={() => setSelectedProofModal(null)}
+                className="font-grotesk border border-white/20 px-6 py-2 text-[11px] font-bold text-ivory uppercase tracking-wider hover:bg-white/10 cursor-pointer"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

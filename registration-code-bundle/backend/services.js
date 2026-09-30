@@ -52,99 +52,6 @@ export const EVENT_WHATSAPP_HANDLERS = {
 };
 
 // -------------------------------------------------------------
-// UPI Reference / UTR Validation & Duplicate Checking
-// -------------------------------------------------------------
-export function validateUpiTransactionId(rawId) {
-  if (!rawId || typeof rawId !== 'string') {
-    return { valid: false, reason: 'empty', message: 'UPI Reference ID is required.' };
-  }
-  const cleanId = rawId.trim();
-
-  // Real Indian UPI UTR is strictly 12 numeric digits
-  if (!/^\d{12}$/.test(cleanId)) {
-    return {
-      valid: false,
-      reason: 'format',
-      message: `UPI Reference / UTR must be exactly 12 numeric digits from your payment receipt (e.g., 427012345678). You entered ${cleanId.length} digits.`,
-    };
-  }
-
-  // Reject dummy repeating digits (e.g. 000000000000, 111111111111)
-  if (/^(\d)\1{11}$/.test(cleanId)) {
-    return {
-      valid: false,
-      reason: 'dummy',
-      message: 'Invalid reference ID: repeating digits are not allowed. Please enter your real payment UTR.',
-    };
-  }
-
-  // Reject obvious sequential test sequences
-  const dummySequences = [
-    '123456789012',
-    '012345678901',
-    '234567890123',
-    '345678901234',
-    '987654321098',
-    '876543210987',
-    '121212121212',
-    '123123123123',
-  ];
-  if (dummySequences.includes(cleanId)) {
-    return {
-      valid: false,
-      reason: 'dummy',
-      message: 'Dummy/test transaction ID detected! Enter the genuine 12-digit UTR from your UPI payment app.',
-    };
-  }
-
-  return { valid: true, cleanId };
-}
-
-export async function checkTransactionIdService(transactionId) {
-  const val = validateUpiTransactionId(transactionId);
-  if (!val.valid) return val;
-  const txn = val.cleanId;
-
-  // 1. Check in-memory registrations for duplicate
-  for (const reg of memRegistrations) {
-    if (Array.isArray(reg.payment_details)) {
-      const match = reg.payment_details.find((p) => p && p.transaction_id === txn);
-      if (match) {
-        return {
-          valid: false,
-          reason: 'duplicate',
-          message: `Duplicate Transaction ID! Reference ID ${txn} has already been registered in the system (Player: ${reg.player_tag}). Duplicate payments are rejected.`,
-        };
-      }
-    }
-  }
-
-  // 2. Check TiDB database for duplicate
-  if (isTiDBConfigured()) {
-    try {
-      const rows = await query(
-        `SELECT player_tag, created_at, payment_details 
-         FROM registrations 
-         WHERE payment_details IS NOT NULL AND payment_details LIKE ? 
-         LIMIT 1`,
-        [`%${txn}%`]
-      );
-      if (rows && rows.length > 0) {
-        return {
-          valid: false,
-          reason: 'duplicate',
-          message: `Duplicate Transaction ID! Reference ID ${txn} was already submitted in a previous registration. Reusing transaction IDs is prohibited.`,
-        };
-      }
-    } catch (err) {
-      console.warn('DB check for transaction id warning:', err.message);
-    }
-  }
-
-  return { valid: true, message: 'Valid UPI Reference ID (Unique)' };
-}
-
-// -------------------------------------------------------------
 // 1. Events Service
 // -------------------------------------------------------------
 export async function getEventsService({ slug, category } = {}) {
@@ -225,94 +132,21 @@ export async function registerPlayerService(payload) {
 
   const player_tag = genPlayerTag();
 
-  // Validate payment details if provided
-  const rawPayments = Array.isArray(payload.payment_details) ? payload.payment_details : [];
-  const payment_details = [];
-  const seenTxns = new Set();
-
-  for (const p of rawPayments) {
-    if (!p || !p.transaction_id) continue;
-    const val = validateUpiTransactionId(p.transaction_id);
-    if (!val.valid) {
-      throw new Error(`Invalid payment reference for ${p.event_name || p.event_slug}: ${val.message}`);
-    }
-    if (seenTxns.has(val.cleanId)) {
-      throw new Error(`Duplicate transaction ID detected: ${val.cleanId} is used for multiple events.`);
-    }
-    seenTxns.add(val.cleanId);
-
-    const dupCheck = await checkTransactionIdService(val.cleanId);
-    if (!dupCheck.valid) {
-      throw new Error(dupCheck.message || `Transaction ID ${val.cleanId} is duplicate.`);
-    }
-
-    payment_details.push({
-      event_slug: clean(p.event_slug, 60),
-      event_name: clean(p.event_name, 100),
-      coordinator: clean(p.coordinator, 80),
-      upi_id: clean(p.upi_id, 80),
-      transaction_id: val.cleanId,
-      proof_name: clean(p.proof_name, 120),
-      proof_data: typeof p.proof_data === 'string' ? p.proof_data.slice(0, 1000000) : null,
-      verified: false,
-      submitted_at: new Date().toISOString(),
-    });
-  }
-
-  const initialStatus = payment_details.length > 0 ? 'pending_verification' : 'confirmed';
-
   if (isTiDBConfigured()) {
     return await transaction(async (conn) => {
-      let regId;
-      try {
-        // Try inserting with payment_details
-        const [res] = await conn.execute(
-          `INSERT INTO registrations 
-           (player_tag, full_name, email, phone, college, department, year_of_study, city, state, alternate_phone, emergency_contact, team_name, team_size, teammates, payment_details, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            player_tag, full_name, email, phone, college, department, year_of_study,
-            city || null, state || null, alternate_phone || null, emergency_contact || null,
-            team_name || null, team_size || null, JSON.stringify(teammates),
-            payment_details.length ? JSON.stringify(payment_details) : null,
-            initialStatus,
-          ]
-        );
-        regId = res.insertId;
-      } catch (insertErr) {
-        if (insertErr.message && insertErr.message.includes('Unknown column')) {
-          try {
-            await conn.execute('ALTER TABLE registrations ADD COLUMN payment_details JSON NULL, ADD COLUMN payment_status VARCHAR(40) DEFAULT "pending_verification"');
-            const [res] = await conn.execute(
-              `INSERT INTO registrations 
-               (player_tag, full_name, email, phone, college, department, year_of_study, city, state, alternate_phone, emergency_contact, team_name, team_size, teammates, payment_details, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                player_tag, full_name, email, phone, college, department, year_of_study,
-                city || null, state || null, alternate_phone || null, emergency_contact || null,
-                team_name || null, team_size || null, JSON.stringify(teammates),
-                payment_details.length ? JSON.stringify(payment_details) : null,
-                initialStatus,
-              ]
-            );
-            regId = res.insertId;
-          } catch (alterErr) {
-            const [res] = await conn.execute(
-              `INSERT INTO registrations 
-               (player_tag, full_name, email, phone, college, department, year_of_study, city, state, alternate_phone, emergency_contact, team_name, team_size, teammates, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                player_tag, full_name, email, phone, college, department, year_of_study,
-                city || null, state || null, alternate_phone || null, emergency_contact || null,
-                team_name || null, team_size || null, JSON.stringify(teammates), initialStatus,
-              ]
-            );
-            regId = res.insertId;
-          }
-        } else {
-          throw insertErr;
-        }
-      }
+      // 1. Insert registration
+      const [res] = await conn.execute(
+        `INSERT INTO registrations 
+         (player_tag, full_name, email, phone, college, department, year_of_study, city, state, alternate_phone, emergency_contact, team_name, team_size, teammates, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          player_tag, full_name, email, phone, college, department, year_of_study,
+          city || null, state || null, alternate_phone || null, emergency_contact || null,
+          team_name || null, team_size || null, JSON.stringify(teammates), 'confirmed',
+        ]
+      );
+
+      const regId = res.insertId;
 
       // 2. Insert joined events
       for (const slug of event_slugs) {
@@ -332,8 +166,7 @@ export async function registerPlayerService(payload) {
         full_name,
         event_slugs,
         id: regId,
-        status: initialStatus,
-        payment_details,
+        status: 'confirmed',
         coordinators,
       };
     });
@@ -356,8 +189,7 @@ export async function registerPlayerService(payload) {
     team_name,
     team_size,
     teammates,
-    payment_details,
-    status: initialStatus,
+    status: 'confirmed',
     created_at: new Date().toISOString(),
   };
   memRegistrations.push(regRecord);
@@ -375,8 +207,7 @@ export async function registerPlayerService(payload) {
     full_name,
     event_slugs,
     id: regRecord.id,
-    status: initialStatus,
-    payment_details,
+    status: 'confirmed',
     coordinators,
     persisted: 'memory_fallback',
   };
