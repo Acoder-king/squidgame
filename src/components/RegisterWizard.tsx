@@ -221,26 +221,63 @@ export default function RegisterWizard() {
     }
   };
 
-  const handleProofUpload = (slug: string, file: File) => {
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1200;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(event.target?.result as string);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        };
+        img.onerror = () => resolve(event.target?.result as string);
+        img.src = event.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleProofUpload = async (slug: string, file: File) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       setPaymentError('Only image files (JPG, PNG, WebP) are allowed for payment proof.');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      setPaymentError('Image size must be less than 5 MB.');
+    if (file.size > 10 * 1024 * 1024) {
+      setPaymentError('Image size must be less than 10 MB.');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
+    try {
+      const dataUrl = await compressImage(file);
       setPaymentProofs((prev) => ({
         ...prev,
         [slug]: { dataUrl, name: file.name, size: file.size },
       }));
       setPaymentError('');
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      setPaymentError('Failed to process payment screenshot. Please try again.');
+    }
   };
 
   const form = useForm<FormValues>({
