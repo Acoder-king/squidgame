@@ -226,7 +226,9 @@ export default function RegisterWizard() {
         setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
       } else {
         setTxnErrors((prev) => ({ ...prev, [slug]: '' }));
-        // Call server check
+        setTxnSuccess((prev) => ({ ...prev, [slug]: true }));
+
+        // Attempt server-side duplicate check (non-blocking if API is offline or returns HTML)
         setTxnChecking((prev) => ({ ...prev, [slug]: true }));
         try {
           const res = await apiPost<{ valid: boolean; message?: string }>('/api/check-transaction', {
@@ -235,13 +237,20 @@ export default function RegisterWizard() {
           if (res && res.valid) {
             setTxnErrors((prev) => ({ ...prev, [slug]: '' }));
             setTxnSuccess((prev) => ({ ...prev, [slug]: true }));
-          } else {
+          } else if (res && !res.valid) {
             setTxnErrors((prev) => ({ ...prev, [slug]: res?.message || 'Invalid or duplicate reference ID.' }));
             setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
           }
         } catch (err: any) {
-          setTxnErrors((prev) => ({ ...prev, [slug]: err.message || 'Duplicate check failed.' }));
-          setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
+          const msg = err?.message || '';
+          if (msg && !msg.includes('<!DOCTYPE') && !msg.includes('JSON') && !msg.includes('HTML') && !msg.includes('Unexpected') && !msg.includes('non-JSON')) {
+            setTxnErrors((prev) => ({ ...prev, [slug]: msg }));
+            setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
+          } else {
+            console.warn('Backend duplicate check unavailable, using client validation:', msg);
+            setTxnErrors((prev) => ({ ...prev, [slug]: '' }));
+            setTxnSuccess((prev) => ({ ...prev, [slug]: true }));
+          }
         } finally {
           setTxnChecking((prev) => ({ ...prev, [slug]: false }));
         }
@@ -415,19 +424,25 @@ export default function RegisterWizard() {
           for (const slug of payableSlugs) {
             const txn = (transactionIds[slug] || '').trim();
             const eventName = events.find(e => e.slug === slug)?.name || slug;
-            const res = await apiPost<{ valid: boolean; message?: string }>('/api/check-transaction', {
-              transactionId: txn,
-            });
-            if (!res.valid) {
-              setPaymentError(`${eventName}: ${res.message || 'Duplicate Transaction ID detected in system.'}`);
-              setVerifyingPayments(false);
-              return;
+            try {
+              const res = await apiPost<{ valid: boolean; message?: string }>('/api/check-transaction', {
+                transactionId: txn,
+              });
+              if (res && !res.valid) {
+                setPaymentError(`${eventName}: ${res.message || 'Duplicate Transaction ID detected in system.'}`);
+                setVerifyingPayments(false);
+                return;
+              }
+            } catch (checkErr: any) {
+              const msg = checkErr?.message || '';
+              if (msg && !msg.includes('<!DOCTYPE') && !msg.includes('JSON') && !msg.includes('HTML') && !msg.includes('Unexpected') && !msg.includes('non-JSON')) {
+                setPaymentError(msg);
+                setVerifyingPayments(false);
+                return;
+              }
+              console.warn('Backend duplicate check unavailable during step verification:', msg);
             }
           }
-        } catch (err: any) {
-          setPaymentError(err.message || 'Transaction validation failed. Duplicate IDs are rejected.');
-          setVerifyingPayments(false);
-          return;
         } finally {
           setVerifyingPayments(false);
         }

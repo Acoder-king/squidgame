@@ -48,8 +48,14 @@ export interface GalleryItem {
 
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(path);
-  if (!res.ok) throw new Error(`Request failed (${res.status})`);
-  return res.json() as Promise<T>;
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    if (!res.ok) throw new Error(`Request failed (${res.status})`);
+    throw new Error('API returned non-JSON response');
+  }
+  const data = (await res.json()) as T & { error?: string };
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
 }
 
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
@@ -58,6 +64,11 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    if (!res.ok) throw new Error(`Request failed (${res.status})`);
+    throw new Error('API returned non-JSON response');
+  }
   const data = (await res.json()) as T & { error?: string };
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
