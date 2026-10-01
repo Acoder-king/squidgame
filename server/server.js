@@ -56,7 +56,7 @@ app.get('/api/events', async (req, res) => {
 });
 
 // 2. Player Registration API
-app.post('/api/register', async (req, res) => {
+app.post(['/api/register', '/register'], async (req, res) => {
   try {
     const result = await registerPlayerService(req.body);
     return res.status(201).json(result);
@@ -67,7 +67,7 @@ app.post('/api/register', async (req, res) => {
 });
 
 // 2b. UPI Transaction Validation & Duplicate Check API
-app.all('/api/check-transaction', async (req, res) => {
+app.all(['/api/check-transaction', '/check-transaction'], async (req, res) => {
   try {
     const txnId = req.method === 'POST' ? req.body?.transactionId : req.query?.id;
     const result = await checkTransactionIdService(txnId);
@@ -135,7 +135,7 @@ app.get('/api/registrations', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch registrations' });
   }
 // 8. Payment Receipt Image Endpoint
-app.get('/api/receipt', async (req, res) => {
+app.get(['/api/receipt', '/receipt'], async (req, res) => {
   try {
     const { tag, txn, slug, format } = req.query;
     const receipt = await getReceiptService({ tag, txn, slug });

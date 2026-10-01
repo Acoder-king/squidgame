@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useForm, useFieldArray, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -142,6 +142,7 @@ export default function RegisterWizard() {
   const [verifyingPayments, setVerifyingPayments] = useState(false);
   const [selectedProofModal, setSelectedProofModal] = useState<{ src: string; title: string } | null>(null);
   const [canShareFile, setCanShareFile] = useState(false);
+  const latestTxnVal = useRef<Record<string, string>>({});
 
   useEffect(() => {
     if (typeof navigator !== 'undefined' && 'canShare' in navigator) {
@@ -213,6 +214,7 @@ export default function RegisterWizard() {
 
   const handleTxnChange = async (slug: string, val: string) => {
     const digitsOnly = val.replace(/\D/g, '').slice(0, 12);
+    latestTxnVal.current[slug] = digitsOnly;
     const updated = { ...transactionIds, [slug]: digitsOnly };
     setTransactionIds(updated);
     setPaymentError('');
@@ -224,39 +226,44 @@ export default function RegisterWizard() {
       if (!check.valid) {
         setTxnErrors((prev) => ({ ...prev, [slug]: check.message }));
         setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
-      } else {
-        setTxnErrors((prev) => ({ ...prev, [slug]: '' }));
-        setTxnSuccess((prev) => ({ ...prev, [slug]: true }));
+        return;
+      }
 
-        // Attempt server-side duplicate check (non-blocking if API is offline or returns HTML)
-        setTxnChecking((prev) => ({ ...prev, [slug]: true }));
-        try {
-          const res = await apiPost<{ valid: boolean; message?: string }>('/api/check-transaction', {
-            transactionId: digitsOnly,
-          });
-          if (res && res.valid) {
-            setTxnErrors((prev) => ({ ...prev, [slug]: '' }));
-            setTxnSuccess((prev) => ({ ...prev, [slug]: true }));
-          } else if (res && !res.valid) {
-            setTxnErrors((prev) => ({ ...prev, [slug]: res?.message || 'Invalid or duplicate reference ID.' }));
-            setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
-          }
-        } catch (err: any) {
-          const msg = err?.message || '';
-          if (msg && !msg.includes('<!DOCTYPE') && !msg.includes('JSON') && !msg.includes('HTML') && !msg.includes('Unexpected') && !msg.includes('non-JSON')) {
-            setTxnErrors((prev) => ({ ...prev, [slug]: msg }));
+      setTxnErrors((prev) => ({ ...prev, [slug]: '' }));
+      setTxnSuccess((prev) => ({ ...prev, [slug]: true }));
+
+      // Attempt server-side duplicate check (non-blocking if API is offline or 404)
+      setTxnChecking((prev) => ({ ...prev, [slug]: true }));
+      try {
+        const res = await apiPost<{ valid: boolean; message?: string }>('/api/check-transaction', {
+          transactionId: digitsOnly,
+        });
+
+        // Only update if the user has not changed the input while request was in-flight
+        if (latestTxnVal.current[slug] === digitsOnly) {
+          if (res && res.valid === false) {
+            setTxnErrors((prev) => ({ ...prev, [slug]: res.message || 'Duplicate Transaction ID detected in system.' }));
             setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
           } else {
-            console.warn('Backend duplicate check unavailable, using client validation:', msg);
             setTxnErrors((prev) => ({ ...prev, [slug]: '' }));
             setTxnSuccess((prev) => ({ ...prev, [slug]: true }));
           }
-        } finally {
+        }
+      } catch (err: any) {
+        // If API is 404 or offline, gracefully rely on client-side format validation
+        if (latestTxnVal.current[slug] === digitsOnly) {
+          console.warn('Backend duplicate check unavailable, using client validation:', err?.message);
+          setTxnErrors((prev) => ({ ...prev, [slug]: '' }));
+          setTxnSuccess((prev) => ({ ...prev, [slug]: true }));
+        }
+      } finally {
+        if (latestTxnVal.current[slug] === digitsOnly) {
           setTxnChecking((prev) => ({ ...prev, [slug]: false }));
         }
       }
     } else {
       setTxnSuccess((prev) => ({ ...prev, [slug]: false }));
+      setTxnChecking((prev) => ({ ...prev, [slug]: false }));
       if (digitsOnly.length > 0) {
         setTxnErrors((prev) => ({
           ...prev,

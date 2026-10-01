@@ -15,6 +15,11 @@
     "TIDB_DATABASE": "test",
     "TIDB_ENABLE_SSL": "true"
   },
+  "functions": {
+    "api/*.js": {
+      "includeFiles": "server/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/((?!api/.*).*)",
