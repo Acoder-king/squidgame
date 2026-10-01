@@ -111,6 +111,59 @@ export default defineConfig(async ({ mode }) => {
             return res.end(JSON.stringify({ total: list.length, registrations: list }));
           }
 
+          if (pathname === '/api/receipt') {
+            const tag = url.searchParams.get('tag');
+            const txn = url.searchParams.get('txn');
+            const slug = url.searchParams.get('slug');
+            const format = url.searchParams.get('format');
+            const receipt = await srv.getReceiptService({ tag, txn, slug });
+
+            if (!receipt || !receipt.proof_data) {
+              if (format === 'json') {
+                res.statusCode = 404;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({ error: 'Receipt not found' }));
+              }
+              res.statusCode = 404;
+              res.setHeader('Content-Type', 'text/html; charset=utf-8');
+              return res.end(`
+                <!DOCTYPE html>
+                <html>
+                <head><title>Receipt Not Found</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+                <body style="background:#07090e;color:#e2e8f0;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;">
+                  <div style="background:#0f141c;border:1px solid #333;border-radius:8px;padding:2rem;max-width:400px;text-align:center;">
+                    <h2 style="color:#f43f5e;margin-top:0;">Payment Screenshot Not Found</h2>
+                    <p style="color:#94a3b8;font-size:14px;">No receipt image found for: <code>${tag || txn || 'N/A'}</code></p>
+                  </div>
+                </body>
+                </html>
+              `);
+            }
+
+            if (format === 'json') {
+              res.setHeader('Content-Type', 'application/json');
+              return res.end(JSON.stringify(receipt));
+            }
+
+            const match = receipt.proof_data.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              const mime = match[1] || 'image/jpeg';
+              const buffer = Buffer.from(match[2], 'base64');
+              res.setHeader('Content-Type', mime);
+              res.setHeader('Cache-Control', 'public, max-age=86400');
+              return res.end(buffer);
+            }
+
+            if (receipt.proof_data.startsWith('http')) {
+              res.statusCode = 302;
+              res.setHeader('Location', receipt.proof_data);
+              return res.end();
+            }
+
+            res.setHeader('Content-Type', 'text/plain');
+            return res.end(receipt.proof_data);
+          }
+
           next();
         } catch (err: any) {
           console.error('API middleware error:', err);

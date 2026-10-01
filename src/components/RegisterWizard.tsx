@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, Loader2, CheckCircle2, AlertCircle, Plus, Trash2,
   Swords, User, GraduationCap, PhoneCall, Users, ClipboardCheck, PartyPopper,
   MessageCircle, Send, Copy, ShieldCheck, CheckCheck, Printer, Check, QrCode, IndianRupee,
-  Upload, FileCheck, X, Eye, ShieldAlert, CheckCircle, RefreshCw,
+  Upload, FileCheck, X, Eye, ShieldAlert, CheckCircle, RefreshCw, Paperclip, Download, Share2,
 } from 'lucide-react';
 import { apiGet, apiPost, type ArenaEvent } from '../lib/api';
 import { buildRegistrationWhatsAppUrl } from '../data/content';
@@ -141,6 +141,44 @@ export default function RegisterWizard() {
   const [paymentError, setPaymentError] = useState('');
   const [verifyingPayments, setVerifyingPayments] = useState(false);
   const [selectedProofModal, setSelectedProofModal] = useState<{ src: string; title: string } | null>(null);
+  const [canShareFile, setCanShareFile] = useState(false);
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && 'canShare' in navigator) {
+      try {
+        const testFile = new File(['test'], 'test.png', { type: 'image/png' });
+        setCanShareFile(navigator.canShare({ files: [testFile] }));
+      } catch {
+        setCanShareFile(false);
+      }
+    }
+  }, []);
+
+  const handleShareWithReceipt = async (slug: string, dispatch: any) => {
+    const proof = paymentProofs[slug];
+    const text = dispatch.message;
+    if (!proof || !canShareFile) {
+      window.open(dispatch.url, '_blank');
+      return;
+    }
+
+    try {
+      const res = await fetch(proof.dataUrl);
+      const blob = await res.blob();
+      const ext = blob.type.includes('png') ? 'png' : 'jpg';
+      const file = new File([blob], `receipt-${slug}.${ext}`, { type: blob.type || 'image/jpeg' });
+
+      await navigator.share({
+        title: `INTELLETTO-26 Registration - ${dispatch.eventName}`,
+        text: text,
+        files: [file],
+      });
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        window.open(dispatch.url, '_blank');
+      }
+    }
+  };
 
   const validateUpiInput = (id: string, currentSlug: string, allTxnIds: Record<string, string>, payableSlugs: string[]) => {
     const clean = id.trim();
@@ -723,11 +761,10 @@ export default function RegisterWizard() {
                           </div>
 
                           {/* Payment Confirmation */}
-                          <div className={`mt-4 border-t pt-4 ${
-                            paymentConfirmed[slug]
+                          <div className={`mt-4 border-t pt-4 ${paymentConfirmed[slug]
                               ? 'border-emerald-500/30'
                               : 'border-white/10'
-                          }`}>
+                            }`}>
                             <label className="flex cursor-pointer items-start gap-3 text-[13px] text-dim">
                               <input
                                 type="checkbox"
@@ -754,11 +791,10 @@ export default function RegisterWizard() {
                                 <div>
                                   <div className="flex items-center justify-between">
                                     <label className={labelCls}>UPI Reference / UTR ID (12 Digits) *</label>
-                                    <span className={`font-mono text-[10.5px] font-bold ${
-                                      (transactionIds[slug]?.length || 0) === 12
+                                    <span className={`font-mono text-[10.5px] font-bold ${(transactionIds[slug]?.length || 0) === 12
                                         ? (txnErrors[slug] ? 'text-neon' : 'text-emerald-400')
                                         : 'text-faint'
-                                    }`}>
+                                      }`}>
                                       {transactionIds[slug]?.length || 0} / 12 digits
                                     </span>
                                   </div>
@@ -770,13 +806,12 @@ export default function RegisterWizard() {
                                       value={transactionIds[slug] || ''}
                                       onChange={(e) => handleTxnChange(slug, e.target.value)}
                                       placeholder="e.g. 427012345678"
-                                      className={`${inputCls} font-mono tracking-wider ${
-                                        txnErrors[slug]
+                                      className={`${inputCls} font-mono tracking-wider ${txnErrors[slug]
                                           ? 'border-neon/80 bg-neon/5'
                                           : txnSuccess[slug]
                                             ? 'border-emerald-500/80 bg-emerald-950/20'
                                             : ''
-                                      }`}
+                                        }`}
                                     />
                                     <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
                                       {txnChecking[slug] && (
@@ -933,7 +968,7 @@ export default function RegisterWizard() {
             <div>
               <h2 className="font-display text-xl font-bold text-ivory sm:text-2xl">Review and confirm</h2>
               <p className="mt-1 text-sm text-dim">Verify your dossier and payment receipts before entering the registry.</p>
-              
+
               <dl className="hud-border mt-6 divide-y divide-white/10 bg-panel/60 text-[13.5px]">
                 {[
                   ['Arenas', pickedNames.join(', ') || '—'],
@@ -1146,6 +1181,23 @@ export default function RegisterWizard() {
                     </div>
                   </div>
 
+                  {/* Attachment Guidance Notice */}
+                  {Object.keys(paymentProofs).length > 0 && (
+                    <div className="mt-4 rounded-xs border border-amber-500/40 bg-amber-500/10 p-3.5 text-left">
+                      <div className="flex items-start gap-2.5">
+                        <Paperclip size={16} className="mt-0.5 shrink-0 text-amber-400" />
+                        <div>
+                          <p className="font-grotesk text-[11px] font-bold tracking-wide text-amber-300 uppercase">
+                            Attach Your Payment Screenshot in WhatsApp
+                          </p>
+                          <p className="font-grotesk mt-0.5 text-[11.5px] leading-relaxed text-dim">
+                            WhatsApp web links automatically load your text details, but cannot auto-attach image files. Please tap <strong className="text-ivory">📎 (attach)</strong> in your WhatsApp chat and attach your payment receipt before hitting send.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mt-4 space-y-2.5">
                     {success.event_slugs.map((slug) => {
                       const dispatch = buildRegistrationWhatsAppUrl(slug, {
@@ -1154,32 +1206,83 @@ export default function RegisterWizard() {
                         ...success.formData,
                       });
                       if (!dispatch) return null;
+                      const proof = paymentProofs[slug];
 
                       return (
-                        <a
+                        <div
                           key={slug}
-                          href={dispatch.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="group flex items-center justify-between gap-3 border border-emerald-500/40 bg-emerald-500/10 p-3.5 transition-all hover:border-emerald-400 hover:bg-emerald-500/20 hover:shadow-[0_0_16px_rgba(37,211,102,0.3)]"
+                          className="border border-emerald-500/40 bg-emerald-500/10 p-3.5 transition-all hover:border-emerald-400"
                         >
-                          <div className="min-w-0 flex-1">
-                            <p className="font-grotesk text-[10px] font-bold tracking-[0.18em] text-[#25D366] uppercase">
-                              {dispatch.eventName} Coordinator
-                            </p>
-                            <p className="font-grotesk mt-0.5 text-[12px] font-semibold text-ivory">
-                              📱 +91 {dispatch.displayPhone}
-                            </p>
-                            {transactionIds[slug] && (
-                              <p className="font-mono text-[10.5px] text-emerald-400 mt-0.5">
-                                UTR: {transactionIds[slug]}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-grotesk text-[10px] font-bold tracking-[0.18em] text-[#25D366] uppercase">
+                                {dispatch.eventName} Coordinator
                               </p>
-                            )}
+                              <p className="font-grotesk mt-0.5 text-[12px] font-semibold text-ivory">
+                                📱 +91 {dispatch.displayPhone}
+                              </p>
+                              {transactionIds[slug] && (
+                                <p className="font-mono text-[10.5px] text-emerald-400 mt-0.5">
+                                  UTR: {transactionIds[slug]}
+                                </p>
+                              )}
+                              {dispatch.receiptUrl && (
+                                <p className="font-grotesk text-[9.5px] text-emerald-400/90 mt-1">
+                                  ✓ Screenshot Link Embedded in WhatsApp Text
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {canShareFile && proof && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleShareWithReceipt(slug, dispatch)}
+                                  className="font-grotesk inline-flex cursor-pointer items-center gap-1.5 bg-[#25D366] px-3.5 py-1.5 text-[11px] font-bold tracking-wider text-black uppercase transition-transform hover:scale-105 shadow-[0_0_12px_rgba(37,211,102,0.35)]"
+                                  title="Directly attaches receipt screenshot in WhatsApp"
+                                >
+                                  <Share2 size={12} /> Share + Receipt
+                                </button>
+                              )}
+                              <a
+                                href={dispatch.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`font-grotesk inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase transition-transform hover:scale-105 ${
+                                  canShareFile && proof
+                                    ? 'border border-emerald-400/50 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-500/20'
+                                    : 'bg-[#25D366] text-black shadow-[0_0_12px_rgba(37,211,102,0.35)]'
+                                }`}
+                              >
+                                <Send size={12} /> Open WhatsApp
+                              </a>
+                            </div>
                           </div>
-                          <span className="font-grotesk inline-flex shrink-0 items-center gap-1.5 bg-[#25D366] px-3.5 py-1.5 text-[11px] font-bold tracking-wider text-black uppercase transition-transform group-hover:scale-105">
-                            <Send size={12} /> Send on WhatsApp
-                          </span>
-                        </a>
+
+                          {proof && (
+                            <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-2.5">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedProofModal({ src: proof.dataUrl, title: `${dispatch.eventName} — Payment Receipt` })}
+                                className="inline-flex cursor-pointer items-center gap-1.5 font-grotesk text-[10.5px] font-medium text-dim transition-colors hover:text-ivory"
+                              >
+                                <img src={proof.dataUrl} alt="Thumbnail" className="h-6 w-6 rounded border border-white/20 object-cover" />
+                                <span>View Receipt</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const a = document.createElement('a');
+                                  a.href = proof.dataUrl;
+                                  a.download = `payment-receipt-${slug}.jpg`;
+                                  a.click();
+                                }}
+                                className="inline-flex cursor-pointer items-center gap-1 font-grotesk text-[10.5px] font-semibold text-emerald-400 transition-colors hover:text-emerald-300"
+                              >
+                                <Download size={11} /> Save Image
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>

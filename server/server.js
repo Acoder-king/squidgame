@@ -12,6 +12,7 @@ import {
   getScheduleService,
   getRegistrationsService,
   checkTransactionIdService,
+  getReceiptService,
 } from './services.js';
 import { isTiDBConfigured } from './tidb-client.js';
 
@@ -133,11 +134,49 @@ app.get('/api/registrations', async (req, res) => {
     console.error('API /registrations error:', err.message);
     res.status(500).json({ error: 'Failed to fetch registrations' });
   }
+// 8. Payment Receipt Image Endpoint
+app.get('/api/receipt', async (req, res) => {
+  try {
+    const { tag, txn, slug, format } = req.query;
+    const receipt = await getReceiptService({ tag, txn, slug });
+
+    if (!receipt || !receipt.proof_data) {
+      if (format === 'json') return res.status(404).json({ error: 'Receipt not found' });
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.status(404).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Receipt Not Found</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+        <body style="background:#07090e;color:#e2e8f0;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;">
+          <div style="background:#0f141c;border:1px solid #333;border-radius:8px;padding:2rem;max-width:400px;text-align:center;">
+            <h2 style="color:#f43f5e;margin-top:0;">Payment Screenshot Not Found</h2>
+            <p style="color:#94a3b8;font-size:14px;">No receipt image found for: <code>${tag || txn || 'N/A'}</code></p>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
+    if (format === 'json') return res.json(receipt);
+
+    const match = receipt.proof_data.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      const mime = match[1] || 'image/jpeg';
+      const buffer = Buffer.from(match[2], 'base64');
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      return res.end(buffer);
+    }
+
+    if (receipt.proof_data.startsWith('http')) return res.redirect(302, receipt.proof_data);
+    return res.send(receipt.proof_data);
+  } catch (err) {
+    console.error('API /receipt error:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve receipt' });
+  }
 });
 
 
-
-// Start Server if executed directly
 if (process.env.NODE_ENV !== 'test' && !process.env.NETLIFY && !process.env.AWS_LAMBDA_FUNCTION_NAME && !process.env.LAMBDA_TASK_ROOT) {
   app.listen(PORT, () => {
     console.log(`\n==================================================`);

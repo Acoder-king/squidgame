@@ -30,7 +30,7 @@ export const EVENT_WHATSAPP_HANDLERS: Record<string, { event: string; phone: str
   'ai-web-design': { event: 'AI – Web Design', phone: '918778477488', displayPhone: '8778477488' },
   'technical-quiz': { event: 'Technical Quiz', phone: '919489619915', displayPhone: '9489619915' },
   'squid-game': { event: 'Squid Game', phone: '916380559119', displayPhone: '6380559119' },
-  'prompt-clash': { event: 'Prompt Clash', phone: '916369906810', displayPhone: '6369906810' },
+  'prompt-clash': { event: 'Prompt Clash', phone: '918807685732', displayPhone: '8807685732' },
 };
 
 export const EVENT_CREW: Record<string, EventCrew> = {
@@ -38,8 +38,8 @@ export const EVENT_CREW: Record<string, EventCrew> = {
   'ai-web-design': { unit: 'AI – Web Design', coordinators: ['Fareeduddeen', 'Sumaiya J'], team: ['Mohammed Ameen', 'Mohammed Affan', 'Shalini'], phone: '8778477488', whatsapp: '918778477488' },
   'coding-debugging': { unit: 'AI – Web Design', coordinators: ['Fareeduddeen', 'Sumaiya J'], team: ['Mohammed Ameen', 'Mohammed Affan', 'Shalini'], phone: '8778477488', whatsapp: '918778477488' },
   'paper-presentation': { unit: 'Paper Presentation / Poster', coordinators: ['Jagan', 'Rasika'], team: ['Vijay', 'Falak', 'Harish Priyan'], phone: '7010298642', whatsapp: '917010298642' },
-  'prompt-clash': { unit: 'Prompt Clash', coordinators: ['Nizzamuddin', 'Yuvarani'], team: ['Evinesh', 'Priyanka V.'], phone: '6369906810', whatsapp: '916369906810' },
-  'prompt-wars': { unit: 'Prompt Clash', coordinators: ['Nizzamuddin', 'Yuvarani'], team: ['Evinesh', 'Priyanka V.'], phone: '6369906810', whatsapp: '916369906810' },
+  'prompt-clash': { unit: 'Prompt Clash', coordinators: ['Nizzamuddin', 'Yuvarani'], team: ['Evinesh', 'Priyanka V.'], phone: '8807685732', whatsapp: '918807685732' },
+  'prompt-wars': { unit: 'Prompt Clash', coordinators: ['Nizzamuddin', 'Yuvarani'], team: ['Evinesh', 'Priyanka V.'], phone: '8807685732', whatsapp: '918807685732' },
   'free-fire': { unit: 'E-Sports (Free Fire)', coordinators: ['Sabarivasan'], team: ['Shanmugam', 'Imran', 'Yukesh'], phone: '9566685417', whatsapp: '919566685417' },
   'quest-of-mind': { unit: 'Quest of Mind', coordinators: ['Arif', 'Priyanka I'], team: ['Aiman', 'Pooja Shree'], phone: '6383567945', whatsapp: '916383567945' },
   'connections': { unit: 'Quest of Mind', coordinators: ['Arif', 'Priyanka I'], team: ['Aiman', 'Pooja Shree'], phone: '6383567945', whatsapp: '916383567945' },
@@ -68,9 +68,11 @@ export function buildRegistrationWhatsAppUrl(
     teammates?: { name: string }[];
     transaction_id?: string;
   }
-): { url: string; phone: string; displayPhone: string; eventName: string } | null {
+): { url: string; phone: string; displayPhone: string; eventName: string; message: string; receiptUrl: string } | null {
   const handler = EVENT_WHATSAPP_HANDLERS[eventSlug];
   if (!handler) return null;
+
+  const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : '';
 
   const lines = [
     `⚡ *INTELLETTO-26 // ARENA REGISTRATION* ⚡`,
@@ -107,10 +109,15 @@ export function buildRegistrationWhatsAppUrl(
     lines.push(`🤝 *Teammates:*\n${list}`);
   }
 
+  const receiptUrl = origin ? `${origin}/api/receipt?tag=${registration.player_tag}&slug=${eventSlug}` : '';
+
   if (registration.transaction_id) {
     lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     lines.push(`💳 *UPI Reference / UTR:* \`${registration.transaction_id}\``);
-    lines.push(`📑 *Payment Receipt:* Attached (Pending Coordinator Verification)`);
+    lines.push(`📑 *Payment Receipt:* Uploaded in portal · Pending Verification`);
+    if (receiptUrl) {
+      lines.push(`🖼️ *View Payment Screenshot:* ${receiptUrl}`);
+    }
   }
 
   lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);
@@ -123,6 +130,8 @@ export function buildRegistrationWhatsAppUrl(
 
   return {
     url,
+    message,
+    receiptUrl,
     phone: handler.phone,
     displayPhone: handler.displayPhone,
     eventName: handler.event,

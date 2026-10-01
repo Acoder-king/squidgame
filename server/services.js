@@ -48,7 +48,7 @@ export const EVENT_WHATSAPP_HANDLERS = {
   'ai-web-design': { event: 'AI – Web Design', phone: '918778477488', displayPhone: '8778477488' },
   'technical-quiz': { event: 'Technical Quiz', phone: '919489619915', displayPhone: '9489619915' },
   'squid-game': { event: 'Squid Game', phone: '916380559119', displayPhone: '6380559119' },
-  'prompt-clash': { event: 'Prompt Clash', phone: '916369906810', displayPhone: '6369906810' },
+  'prompt-clash': { event: 'Prompt Clash', phone: '918807685732', displayPhone: '8807685732' },
 };
 
 // -------------------------------------------------------------
@@ -486,6 +486,65 @@ export async function getRegistrationsService() {
     const slugs = memRegistrationEvents.filter((j) => j.registration_id === r.id).map((j) => j.event_slug);
     return { ...r, event_slugs: slugs };
   });
+}
+
+// -------------------------------------------------------------
+// 8. Payment Receipt Image Service
+// -------------------------------------------------------------
+export async function getReceiptService({ tag, txn, slug } = {}) {
+  const cleanTag = clean(tag || '', 40);
+  const cleanTxn = clean(txn || '', 40);
+  const cleanSlug = clean(slug || '', 60);
+
+  if (!cleanTag && !cleanTxn) return null;
+
+  let reg = null;
+
+  if (isTiDBConfigured()) {
+    try {
+      if (cleanTag) {
+        const rows = await query('SELECT player_tag, full_name, payment_details FROM registrations WHERE player_tag = ? LIMIT 1', [cleanTag]);
+        if (rows && rows.length > 0) reg = rows[0];
+      }
+      if (!reg && cleanTxn) {
+        const rows = await query('SELECT player_tag, full_name, payment_details FROM registrations WHERE payment_details LIKE ? LIMIT 1', [`%${cleanTxn}%`]);
+        if (rows && rows.length > 0) reg = rows[0];
+      }
+    } catch (err) {
+      console.warn('TiDB query error in getReceiptService:', err.message);
+    }
+  }
+
+  if (!reg) {
+    reg = memRegistrations.find((r) =>
+      (cleanTag && r.player_tag?.toUpperCase() === cleanTag.toUpperCase()) ||
+      (cleanTxn && r.payment_details?.some((p) => p.transaction_id === cleanTxn))
+    );
+  }
+
+  if (!reg || !reg.payment_details) return null;
+
+  const details = typeof reg.payment_details === 'string'
+    ? JSON.parse(reg.payment_details)
+    : reg.payment_details;
+
+  if (!Array.isArray(details) || !details.length) return null;
+
+  const match = cleanSlug
+    ? details.find((p) => p.event_slug === cleanSlug) || details[0]
+    : details[0];
+
+  if (!match || !match.proof_data) return null;
+
+  return {
+    player_tag: reg.player_tag,
+    full_name: reg.full_name,
+    event_slug: match.event_slug,
+    event_name: match.event_name,
+    transaction_id: match.transaction_id,
+    proof_name: match.proof_name,
+    proof_data: match.proof_data,
+  };
 }
 
 
