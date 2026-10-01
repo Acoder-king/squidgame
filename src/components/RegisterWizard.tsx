@@ -537,6 +537,25 @@ export default function RegisterWizard() {
           if (txn) {
             localStorage.setItem(`intelletto_receipt_txn_${txn}`, JSON.stringify(receiptRecord));
           }
+
+          const proof = paymentProofs[slug];
+          if (proof?.dataUrl) {
+            fetch('/api/receipt', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                player_tag: data.player_tag,
+                full_name: data.full_name,
+                college: values.college,
+                department: values.department,
+                event_slug: slug,
+                event_name: events.find((e) => e.slug === slug)?.name || slug,
+                transaction_id: txn || '',
+                proof_name: proof.name || 'receipt.jpg',
+                proof_data: proof.dataUrl,
+              }),
+            }).catch(() => {});
+          }
         });
       } catch (storageErr) {
         console.warn('Could not cache receipt locally:', storageErr);

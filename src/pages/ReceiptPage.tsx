@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, ShieldCheck, CheckCircle2, Download, ExternalLink,
   Copy, Check, Clock, AlertTriangle, Eye, Printer, MessageCircle,
-  FileCheck2, IndianRupee, ZoomIn, X
+  FileCheck2, IndianRupee, ZoomIn, X, Upload
 } from 'lucide-react';
 import { EVENT_WHATSAPP_HANDLERS, EVENT_CREW } from '../data/content';
 import { OFFICIAL_EVENTS } from '../data/eventsData';
@@ -109,8 +109,27 @@ export default function ReceiptPage() {
       console.warn('Error reading from localStorage:', e);
     }
 
-    // 2. Also try fetching from backend JSON API in background if missing proof_data
-    if (!found || !receiptData?.proof_data) {
+    // If proof found locally, sync to cloud in background so other devices (mobile) can see it!
+    if (found && receiptData?.proof_data) {
+      fetch('/api/receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          player_tag: receiptData.player_tag || tag,
+          full_name: receiptData.full_name,
+          college: receiptData.college,
+          department: receiptData.department,
+          event_slug: receiptData.event_slug || slug,
+          event_name: receiptData.event_name,
+          transaction_id: receiptData.transaction_id || txn,
+          proof_name: receiptData.proof_name,
+          proof_data: receiptData.proof_data,
+        }),
+      }).catch(() => {});
+    }
+
+    // 2. Fetch from backend JSON API (crucial for mobile devices or external viewers)
+    if (!receiptData?.proof_data) {
       fetch(`/api/receipt?tag=${encodeURIComponent(tag)}&slug=${encodeURIComponent(slug)}&txn=${encodeURIComponent(txn)}&format=json`)
         .then((res) => {
           if (!res.ok) throw new Error('API unavailable');
@@ -122,6 +141,20 @@ export default function ReceiptPage() {
               ...prev,
               ...data,
             }));
+            // Cache on this device (mobile) so subsequent views are instant!
+            try {
+              localStorage.setItem(`intelletto_receipt_${data.player_tag}`, JSON.stringify({
+                player_tag: data.player_tag,
+                full_name: data.full_name,
+                paymentDetails: [{
+                  event_slug: data.event_slug,
+                  event_name: data.event_name,
+                  transaction_id: data.transaction_id,
+                  proof_data: data.proof_data,
+                  proof_name: data.proof_name,
+                }],
+              }));
+            } catch {}
           }
         })
         .catch(() => {
@@ -131,7 +164,7 @@ export default function ReceiptPage() {
     } else {
       setLoading(false);
     }
-  }, [tag, slug, txn]);
+  }, [tag, slug, txn, receiptData?.proof_data]);
 
   const targetSlug = slug || receiptData?.event_slug || 'prompt-clash';
   const eventInfo = OFFICIAL_EVENTS.find((e) => e.slug === targetSlug);
@@ -162,6 +195,67 @@ export default function ReceiptPage() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const handleDeviceUpload = (file: File) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 1200;
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+          else { w = Math.round((w * maxDim) / h); h = maxDim; }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          setReceiptData((prev) => ({
+            ...prev,
+            player_tag: displayTag,
+            event_slug: targetSlug,
+            event_name: eventName,
+            transaction_id: displayTxn,
+            proof_data: dataUrl,
+          }));
+
+          // Cache locally on this device
+          try {
+            localStorage.setItem(`intelletto_receipt_${displayTag}`, JSON.stringify({
+              player_tag: displayTag,
+              paymentDetails: [{
+                event_slug: targetSlug,
+                event_name: eventName,
+                transaction_id: displayTxn,
+                proof_data: dataUrl,
+              }],
+            }));
+          } catch {}
+
+          // Sync to TiDB Cloud
+          fetch('/api/receipt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              player_tag: displayTag,
+              event_slug: targetSlug,
+              event_name: eventName,
+              transaction_id: displayTxn,
+              proof_data: dataUrl,
+            }),
+          }).catch(() => {});
+        }
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -376,6 +470,18 @@ export default function ReceiptPage() {
                         <MessageCircle size={15} /> Send Screenshot Directly via WhatsApp
                       </a>
                     )}
+                    <label className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded bg-white/10 text-ivory border border-white/20 font-grotesk text-xs font-semibold tracking-wider hover:bg-white/20 cursor-pointer transition-colors">
+                      <Upload size={14} className="text-neon" /> Upload Screenshot from this Phone
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleDeviceUpload(file);
+                        }}
+                      />
+                    </label>
                   </div>
                 )}
               </div>
