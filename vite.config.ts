@@ -75,7 +75,7 @@ export default defineConfig(async ({ mode }) => {
           if (pathname === '/api/check-transaction' && (req.method === 'POST' || req.method === 'GET')) {
             const txnId = req.method === 'POST' ? body?.transactionId : url.searchParams.get('id');
             const result = await srv.checkTransactionIdService(txnId);
-            res.statusCode = result.valid ? 200 : 400;
+            res.statusCode = 200;
             res.setHeader('Content-Type', 'application/json');
             return res.end(JSON.stringify(result));
           }
