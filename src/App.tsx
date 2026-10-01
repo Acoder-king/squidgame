@@ -19,6 +19,7 @@ const RulesPage = lazy(() => import('./pages/RulesPage'));
 const GalleryPage = lazy(() => import('./pages/GalleryPage'));
 const FaqPage = lazy(() => import('./pages/FaqPage'));
 const ContactPage = lazy(() => import('./pages/ContactPage'));
+const ReceiptPage = lazy(() => import('./pages/ReceiptPage'));
 
 const PageLoader = () => (
   <div className="flex min-h-[60vh] items-center justify-center pt-24 text-dim">Loading…</div>
@@ -67,6 +68,8 @@ export default function App() {
                 <Route path="/faq" element={<FaqPage />} />
                 <Route path="/contact" element={<ContactPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                <Route path="/receipt" element={<ReceiptPage />} />
+                <Route path="/api/receipt" element={<ReceiptPage />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>

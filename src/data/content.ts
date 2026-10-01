@@ -109,7 +109,9 @@ export function buildRegistrationWhatsAppUrl(
     lines.push(`🤝 *Teammates:*\n${list}`);
   }
 
-  const receiptUrl = origin ? `${origin}/api/receipt?tag=${registration.player_tag}&slug=${eventSlug}` : '';
+  const receiptUrl = origin
+    ? `${origin}/receipt?tag=${registration.player_tag}&slug=${eventSlug}${registration.transaction_id ? `&txn=${registration.transaction_id}` : ''}`
+    : '';
 
   if (registration.transaction_id) {
     lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);

@@ -522,6 +522,26 @@ export default function RegisterWizard() {
         };
       }
 
+      try {
+        const receiptRecord = {
+          player_tag: data.player_tag,
+          full_name: data.full_name,
+          formData: values,
+          paymentDetails,
+          timestamp: new Date().toISOString(),
+        };
+        localStorage.setItem(`intelletto_receipt_${data.player_tag}`, JSON.stringify(receiptRecord));
+        localStorage.setItem('intelletto_latest_receipt', JSON.stringify(receiptRecord));
+        payableSlugs.forEach((slug) => {
+          const txn = transactionIds[slug];
+          if (txn) {
+            localStorage.setItem(`intelletto_receipt_txn_${txn}`, JSON.stringify(receiptRecord));
+          }
+        });
+      } catch (storageErr) {
+        console.warn('Could not cache receipt locally:', storageErr);
+      }
+
       setSuccess({
         player_tag: data.player_tag,
         full_name: data.full_name,
