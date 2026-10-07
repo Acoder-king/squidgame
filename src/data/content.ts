@@ -150,7 +150,7 @@ export const EVENT_IMAGES: Record<string, string> = {
   'free-fire': '/media/g-esports.jpg',
   'quest-of-mind': '/media/e-quest.jpg',
   'connections': '/media/e-quest.jpg',
-  'squid-game': '/media/g-chess.jpg',
+  'squid-game': '/media/e-squidgame.jpg',
   'chess': '/media/g-chess.jpg',
   'filmography-photography': '/media/e-photo.jpg',
   'art-painting': '/media/e-photo.jpg',

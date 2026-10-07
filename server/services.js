@@ -1,4 +1,5 @@
 import { query, transaction, isTiDBConfigured } from './tidb-client.js';
+import { sendRegistrationToGoogleSheet } from './google-sheets.js';
 
 // Fallback seed data in case database is still connecting or initializing
 const FALLBACK_FAQS = [
@@ -326,7 +327,7 @@ export async function registerPlayerService(payload) {
         .map((slug) => EVENT_WHATSAPP_HANDLERS[slug])
         .filter(Boolean);
 
-      return {
+      const result = {
         ok: true,
         player_tag,
         full_name,
@@ -336,6 +337,29 @@ export async function registerPlayerService(payload) {
         payment_details,
         coordinators,
       };
+
+      // Send to Google Sheet in background
+      sendRegistrationToGoogleSheet({
+        player_tag,
+        full_name,
+        email,
+        phone,
+        college,
+        department,
+        year_of_study,
+        city,
+        state,
+        alternate_phone,
+        emergency_contact,
+        team_name,
+        team_size,
+        teammates,
+        event_slugs,
+        payment_details,
+        status: initialStatus,
+      }).catch((err) => console.warn('[Google Sheets] Async dispatch warning:', err.message));
+
+      return result;
     });
   }
 
@@ -369,7 +393,7 @@ export async function registerPlayerService(payload) {
     .map((slug) => EVENT_WHATSAPP_HANDLERS[slug])
     .filter(Boolean);
 
-  return {
+  const result = {
     ok: true,
     player_tag,
     full_name,
@@ -380,6 +404,13 @@ export async function registerPlayerService(payload) {
     coordinators,
     persisted: 'memory_fallback',
   };
+
+  // Send to Google Sheet in background
+  sendRegistrationToGoogleSheet({ ...regRecord, event_slugs }).catch((err) =>
+    console.warn('[Google Sheets] Async dispatch warning:', err.message)
+  );
+
+  return result;
 }
 
 // -------------------------------------------------------------

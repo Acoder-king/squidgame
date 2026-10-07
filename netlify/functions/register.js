@@ -70,6 +70,59 @@ export const handler = async (event) => {
       .map((slug) => EVENT_WHATSAPP_HANDLERS[slug])
       .filter(Boolean);
 
+    const webhookUrl =
+      process.env.GOOGLE_SHEETS_WEBHOOK_URL ||
+      'https://script.google.com/macros/s/AKfycbxgivsw14Cii1Ydd_38ImDn4zp5_M-pB1O4O53EOSsY0EunrDt5Xgm71p87Y7LffU9q/exec';
+    if (webhookUrl) {
+      try {
+        const eventNames = {
+          'quest-of-mind': 'Quest of Mind',
+          'free-fire': 'E-Sports (Free Fire)',
+          'filmography-photography': 'Filmography / Photography',
+          'paper-presentation': 'Paper Presentation / Poster',
+          'ai-web-design': 'AI – Web Design',
+          'technical-quiz': 'Technical Quiz',
+          'squid-game': 'Squid Game',
+          'prompt-clash': 'Prompt Clash',
+        };
+        const eventsStr = event_slugs.map((s) => eventNames[s] || s).join(', ');
+        const teammatesStr = Array.isArray(teammates) ? teammates.map((t) => (typeof t === 'string' ? t : t?.name || '')).filter(Boolean).join(', ') : '';
+        const txnIds = Array.isArray(payment_details) ? payment_details.map((p) => p && p.transaction_id).filter(Boolean).join(', ') : '';
+        const upiIds = Array.isArray(payment_details) ? payment_details.map((p) => p && p.upi_id).filter(Boolean).join(', ') : '';
+        const proofNames = Array.isArray(payment_details) ? payment_details.map((p) => p && p.proof_name).filter(Boolean).join(', ') : '';
+
+        await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sheetId: '1YNq_7hz2QUfI0XkadtZlS_nWfR3_ThKgeJBW2Ohl72U',
+            timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+            player_tag,
+            full_name: full_name || '',
+            email: email || '',
+            phone: phone || '',
+            alternate_phone: alternate_phone || '',
+            college: college || '',
+            department: department || '',
+            year_of_study: year_of_study || '',
+            city: city || '',
+            state: state || '',
+            emergency_contact: emergency_contact || '',
+            events: eventsStr,
+            team_name: team_name || '',
+            team_size: team_size || '',
+            teammates: teammatesStr,
+            status: initialStatus,
+            transaction_ids: txnIds,
+            upi_ids: upiIds,
+            proof_names: proofNames,
+          }),
+        });
+      } catch (sheetErr) {
+        console.warn('Netlify Google Sheets sync warning:', sheetErr.message);
+      }
+    }
+
     return {
       statusCode: 201,
       headers: { ...headers, 'Content-Type': 'application/json' },
